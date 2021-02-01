@@ -1,6 +1,6 @@
 # messenger
 
-Send messages from a csv file of phone numbers. Created as a cheap, basic alternative to CareMessage, for use at the [Noor Clinic](https://slonoorfoundation.org/).
+Send messages from to a list of phone numbers. Created as a cheap, basic alternative to CareMessage, for use at the [Noor Clinic](https://slonoorfoundation.org/).
 
 Minimal CLI at the moment. More coming.
 
