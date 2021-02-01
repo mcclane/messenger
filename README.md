@@ -9,8 +9,16 @@ Minimal CLI at the moment. More coming.
 - twilio
 
 # Usage:
-`python messenger.py <messsages.csv> <people.csv>`
+```
+usage: messenger.py [-h] [-list_all] [--messages MESSAGES] [--people PEOPLE]
 
+optional arguments:
+  -h, --help           show this help message and exit
+  -list_all
+  --messages MESSAGES  csv file containing messages
+  --people PEOPLE      csv file containing phone numbers
+  ```
+  
 ## messages.csv format:
 | Language | Message |
 |----------|---------|
