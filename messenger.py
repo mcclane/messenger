@@ -1,20 +1,91 @@
+"""
+TODO:
+    - list [start_date] [end_date] [from] [to]
+    - send <to> "<message>"
+"""
 from csv import DictReader
 import sys
 import asyncio
+from functools import partial
+import datetime
+from datetime import datetime as dt
+from dateutil.parser import parse
+from collections import defaultdict
+from pprint import pprint
 
 from twilio.rest import Client
 from secret import *
 
-def send_message(client, body, from_, to):
-    return client.messages.create(body=body, from_=from_, to=to)
 
-def get_language_to_messages(messages_csv):
+class Messenger:
+
+    from_ = None
+    client = None
+
+    def __init__(self, from_number=None):
+        self.from_ = from_number
+        self.client = Client(ACCOUNT_SID, AUTH_TOKEN)
+
+    async def send_message(self, body, to, from_number=None):
+        if from_number == None:
+            from_number = self.from_
+        await asyncio.get_event_loop().run_in_executor(None,
+                partial(self.client.messages.create, body=body, from_=from_number, to=to))
+
+
+    async def list_messages(self, date_sent=None, from_number=None, to=None, limit=None, page_size=None):
+        messages = await asyncio.get_event_loop().run_in_executor(None,
+                partial(self.client.messages.list, 
+                    date_sent=date_sent, from_=from_number, to=to, limit=limit, page_size=page_size))
+        return messages
+
+    async def conversations(self, start_date, end_date):
+        date_diff = end_date - start_date
+        dates = [start_date + datetime.timedelta(days=i) for i in range(date_diff.days)]
+        # Leave to preserve pagination?
+        day_messages = await asyncio.gather(*[self.list_messages(date_sent=d) for d in dates])
+
+        conversations = defaultdict(list)
+        for dm in day_messages:
+            for m in dm:
+                print(m.direction)
+                if m.direction == 'inbound':
+                    # incoming
+                    # match from number
+                    conversations[m.from_].append(m)
+                else:
+                    # outgoing
+                    # match to number
+                    conversations[m.to].append(m)
+
+        # sort conversations by message date
+        for p in conversations:
+            conversations[p].sort(key=lambda m: m.date_sent)
+
+        return conversations
+
+async def send_from_file(m, messages_csv, people_csv): 
     language_to_message = {}
     with open(messages_csv) as f:
         r = DictReader(f)
-        for line in r:
-            language_to_message[line['Language']] = line['Message']
-    return language_to_message
+        language_to_message = {line['Language']: line['Message'] for line in r}
+    with open(people_csv) as f:
+        r = DictReader(f)
+        tasks = [m.send_message(language_to_message[line['Language']], line['Phone Number']) 
+                for line in r]
+    await asyncio.gather(*tasks)
+
+def print_conversations(conversations, people_dict=None):
+    if people_dict == None:
+        people_dict = {}
+    for p in conversations:
+        print(p)
+        for m in conversations[p]:
+            identifier = people_dict[m.from_] if m.from_ in people_dict else m.from_
+            carat = "<" if m.direction == 'inbound' else ">"
+            print(f"{m.date_sent} | {identifier}{carat} {m.body}")
+        print("-------------------------------------------")
+
 
 async def main():
     if len(sys.argv) < 3:
@@ -23,22 +94,9 @@ async def main():
 
     messages_csv = sys.argv[1]
     people_csv = sys.argv[2]
-
-    language_to_message = get_language_to_messages(messages_csv)
-
-    client = Client(ACCOUNT_SID, AUTH_TOKEN)
-    with open(people_csv) as f:
-        r = DictReader(f)
-        tasks = []
-        for line in r:
-            body = language_to_message[line['Language']]
-            to = line['Phone Number']
-            tasks.append(
-                    asyncio.get_event_loop().run_in_executor(None, 
-                        send_message, client, body, SENDER_NUMBER, to))
-
-    await asyncio.gather(*tasks)
-
-
+    m = Messenger(from_number=SENDER_NUMBER)
+    #await send_from_file(m, messages_csv, people_csv)
+    conversations = await m.conversations(dt(2021, 1, 1), dt(2021, 2, 28))
+    print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"})
 
 asyncio.run(main())
