@@ -10,7 +10,7 @@ Minimal CLI at the moment. More coming.
 
 # Usage:
 ```
-usage: messenger.py [-h] [-list_all] [--messages MESSAGES] [--people PEOPLE]
+python messenger.py [-h] [-list_all] [--messages MESSAGES] [--people PEOPLE]
 
 optional arguments:
   -h, --help           show this help message and exit
