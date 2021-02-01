@@ -12,6 +12,7 @@ from datetime import datetime as dt
 from dateutil.parser import parse
 from collections import defaultdict
 from pprint import pprint
+from argparse import ArgumentParser
 
 from twilio.rest import Client
 from secret import *
@@ -48,7 +49,6 @@ class Messenger:
         conversations = defaultdict(list)
         for dm in day_messages:
             for m in dm:
-                print(m.direction)
                 if m.direction == 'inbound':
                     # incoming
                     # match from number
@@ -88,15 +88,23 @@ def print_conversations(conversations, people_dict=None):
 
 
 async def main():
-    if len(sys.argv) < 3:
-        print("Usage: python messenger.py <messages.csv> <people.csv>")
-        exit(1)
+    parser = ArgumentParser()
+    parser.add_argument('-list_all', action='store_true')
+    parser.add_argument('--messages', help="csv file containing messages")
+    parser.add_argument('--people', help="csv file containing phone numbers")
+    args = parser.parse_args()
 
-    messages_csv = sys.argv[1]
-    people_csv = sys.argv[2]
     m = Messenger(from_number=SENDER_NUMBER)
-    #await send_from_file(m, messages_csv, people_csv)
-    conversations = await m.conversations(dt(2021, 1, 1), dt(2021, 2, 28))
-    print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"})
+    if args.messages and args.people:
+        if input(f"Send {args.messages} to {args.people}? y/N: ") != 'y':
+            print("Not sent")
+            exit(1)
+
+        await send_from_file(m, args.messages, args.people)
+        print("Sent!")
+
+    if args.list_all:
+        conversations = await m.conversations(dt(2021, 1, 1), dt(2021, 2, 28))
+        print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"})
 
 asyncio.run(main())
