@@ -56,16 +56,22 @@ class Messenger:
 
         return conversations
 
-async def send_from_file(m, messages_csv, people_csv): 
+async def send_from_file(m, messages_csv, people_csv, test=None): 
     language_to_message = {}
     with open(messages_csv) as f:
         r = DictReader(f)
         language_to_message = {line['Language']: line['Message'] for line in r}
     with open(people_csv) as f:
         r = DictReader(f)
-        tasks = [m.send_message(language_to_message[line['Language']], line['Phone Number']) 
-                for line in r]
-    await asyncio.gather(*tasks)
+        if not test:
+            tasks = [m.send_message(language_to_message[line['Language']], line['Phone Number']) 
+                    for line in r]
+            await asyncio.gather(*tasks)
+            print("Sent!")
+        else:
+            for line in r:
+                print(line['Phone Number'], language_to_message[line['Language']])
+
 
 def print_conversations(conversations, people_dict=None):
     if people_dict == None:
@@ -89,15 +95,17 @@ async def main():
     parser.add_argument('--people', help="csv file containing phone numbers")
     parser.add_argument('--send_to', help="phone number to send an individual message to") 
     parser.add_argument('--body', help="body of message to send to <to> number")
+    parser.add_argument('--test', action='store_true', help="Print out what would be sent, without actually sending anything")
     args = parser.parse_args()
 
     m = Messenger(from_number=SENDER_NUMBER)
     if args.messages and args.people:
+        if args.test:
+            print("TEST")
         if input(f"Send {args.messages} to {args.people}? y/N: ") != 'y':
             print("Not sent")
             exit(1)
-        await send_from_file(m, args.messages, args.people)
-        print("Sent!")
+        await send_from_file(m, args.messages, args.people, test=args.test)
 
     if args.send_to and args.body:
         # do some processing with the phone number
