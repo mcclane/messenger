@@ -10,6 +10,7 @@ from pprint import pprint
 from argparse import ArgumentParser
 
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 from secret import *
 
 
@@ -22,11 +23,18 @@ class Messenger:
         self.from_ = from_number
         self.client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
+    def try_send_message(self, body, to, from_number=None):
+        try:
+            self.client.messages.create(body=body, from_=from_number, to=to)
+            print(f"{to} SENT: {body}")
+        except TwilioRestException as e:
+            print(f"{to} ERROR: {e}")
+
     async def send_message(self, body, to, from_number=None):
         if from_number == None:
             from_number = self.from_
         return await asyncio.get_event_loop().run_in_executor(None,
-                partial(self.client.messages.create, body=body, from_=from_number, to=to))
+                partial(self.try_send_message, body, to, from_number=from_number))
 
 
     async def list_messages(self, date_sent=None, from_number=None, to=None, limit=None, page_size=None):
@@ -56,27 +64,45 @@ class Messenger:
 
         return conversations
 
-async def send_from_file(m, messages_csv, people_csv, test=None): 
-    language_to_message = {}
+async def send_from_file(messenger, messages_csv, people_csv, test=None): 
+    group_to_message = {}
+    seen = defaultdict(list)
     with open(messages_csv) as f:
         r = DictReader(f)
-        language_to_message = {line['Language']: line['Message'] for line in r}
+        group_to_message = {line['Group']: line['Message'] for line in r}
     with open(people_csv) as f:
         r = DictReader(f)
+        tasks = []
+        for line in r:
+            g = line['Group']
+            p = line['Phone Number']
+            m = None
+            if g in group_to_message:
+                m = group_to_message[g]
+            else:
+                print(f"{p} ERROR: No message found for group {g}. Not sending a message.")
+                continue
+            if p in seen and m in seen[p]:
+                print(f"{p} INFO: Skipping duplicate group {g}.")
+                continue
+
+            seen[p].append(m)
+            if not test:
+                tasks.append(messenger.send_message(m, p))
+            else:
+                print(f"{p} TEST: {m}")
+
         if not test:
-            tasks = [m.send_message(language_to_message[line['Language']], line['Phone Number']) 
-                    for line in r]
             await asyncio.gather(*tasks)
-            print("Sent!")
-        else:
-            for line in r:
-                print(line['Phone Number'], language_to_message[line['Language']])
 
+        print("Done!")
 
-def print_conversations(conversations, people_dict=None):
+def print_conversations(conversations, people_dict=None, responses_only=None):
     if people_dict == None:
         people_dict = {}
     for p in conversations:
+        if responses_only and not any([m.direction == 'inbound' for m in conversations[p]]):
+            continue
         print(p)
         for m in conversations[p]:
             identifier = people_dict[m.from_] if m.from_ in people_dict else m.from_
@@ -88,6 +114,7 @@ def print_conversations(conversations, people_dict=None):
 async def main():
     parser = ArgumentParser()
     parser.add_argument('--list_all', action='store_true')
+    parser.add_argument('--list_responses_only', action='store_true')
     parser.add_argument('--list_start', help="date to begin listing messages from")
     parser.add_argument('--list_end', help="date to begin listing messages from")
     parser.add_argument('--list_with', help="phone number to list conversation with")
@@ -120,6 +147,6 @@ async def main():
         end_date = parse(args.list_end) if args.list_end != None else dt(dt.now().year + 1, dt.now().month, dt.now().day)
         
         conversations = await m.conversations(start_date, end_date, args.list_with)
-        print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"})
+        print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"}, responses_only=args.list_responses_only)
     
 asyncio.run(main())
