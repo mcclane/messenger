@@ -8,6 +8,7 @@ from dateutil.parser import parse
 from collections import defaultdict
 from pprint import pprint
 from argparse import ArgumentParser
+import pandas as pd
 
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
@@ -109,12 +110,33 @@ def print_conversations(conversations, people_dict=None, responses_only=None):
             carat = "<" if m.direction == 'inbound' else ">"
             print(f"{m.date_sent} | {identifier}{carat} {m.body}")
         print("-------------------------------------------")
-
+ 
+def export_responses(conversations, output_csv_name, people_csv=None):
+    to_export = []
+    for p in conversations:
+        if not any([m.direction == 'inbound' for m in conversations[p]]):
+            continue
+        for m in conversations[p]:
+            if m.direction != 'inbound':
+                continue
+            to_export.append([m.from_, m.body])
+    responses_df = pd.DataFrame(to_export, columns=['Phone Number', 'Response'], dtype=str)
+    # join with the people csv
+    if people_csv:
+        people_df = pd.read_csv(people_csv, dtype=str)
+        responses_df = responses_df.merge(people_df, on='Phone Number', how='left')
+    df = responses_df.fillna(value="")
+    df['Response'] = df['Response'].apply(lambda x: repr(x.strip().replace('\n', ' ').replace('\r', '')))
+    df['Response'] = df.groupby("Phone Number")['Response'].transform(' | '.join)
+    df = df.drop_duplicates()
+    df.to_csv(output_csv_name)
+    print(df)
 
 async def main():
     parser = ArgumentParser()
     parser.add_argument('--list_all', action='store_true')
     parser.add_argument('--list_responses_only', action='store_true')
+    parser.add_argument('--export_responses', action='store_true')
     parser.add_argument('--list_start', help="date to begin listing messages from")
     parser.add_argument('--list_end', help="date to begin listing messages from")
     parser.add_argument('--list_with', help="phone number to list conversation with")
@@ -122,6 +144,7 @@ async def main():
     parser.add_argument('--people', help="csv file containing phone numbers")
     parser.add_argument('--send_to', help="phone number to send an individual message to") 
     parser.add_argument('--body', help="body of message to send to <to> number")
+    parser.add_argument('--output', help="output filename")
     parser.add_argument('--test', action='store_true', help="Print out what would be sent, without actually sending anything")
     args = parser.parse_args()
 
@@ -148,5 +171,7 @@ async def main():
         
         conversations = await m.conversations(start_date, end_date, args.list_with)
         print_conversations(conversations, people_dict={SENDER_NUMBER: " Noor Clinic"}, responses_only=args.list_responses_only)
+        if args.export_responses and args.output:
+            export_responses(conversations, args.output, people_csv=args.people)
     
 asyncio.run(main())
